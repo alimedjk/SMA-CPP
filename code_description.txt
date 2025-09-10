@@ -1,40 +1,56 @@
-目录结构（C:\Users\Jianke LIN\Desktop\cpp_test\SMA-CPP）
+目录结构（c:\Users\tassili\Downloads\SMA CPP\SMA-CPP）
 ├── code_description.txt
 ├── include
-│   └── bank
-│       └── client
-│           ├── AbstractClient.hpp
-│           ├── AbstractOperation.hpp
-│           ├── Client.hpp
-│           ├── Consultation.hpp
-│           ├── Transfer.hpp
-│           ├── VIPClient.hpp
-│           └── Withdraw.hpp
+│   ├── bank
+│   │   ├── Bank.h
+│   │   ├── Cashier.h
+│   │   └── Queue.h
+│   ├── client
+│   │   ├── AbstractClient.hpp
+│   │   ├── AbstractOperation.hpp
+│   │   ├── Client.hpp
+│   │   ├── Consultation.hpp
+│   │   ├── Transfer.hpp
+│   │   ├── VIPClient.hpp
+│   │   └── Withdraw.hpp
+│   └── simulation
+│       ├── Simulation.h
+│       ├── SimulationEntry.h
+│       ├── SimulationUtility.h
+│       └── StatisticManager.h
 ├── read.py
 └── src
-    ├── AbsFigure.cpp
-    ├── Carre.cpp
-    ├── Disk.cpp
-    ├── Point.cpp
-    ├── Rectangle.cpp
-    ├── Square.cpp
-    └── bank
-        └── client
-            ├── AbstractClient.cpp
-            ├── AbstractOperation.cpp
-            ├── Client.cpp
-            ├── Consultation.cpp
-            ├── Transfer.cpp
-            ├── VIPClient.cpp
-            └── Withdraw.cpp
+    ├── bank
+    │   ├── Bank.cpp
+    │   ├── Cashier.cpp
+    │   └── Queue.cpp
+    ├── client
+    │   ├── AbstractClient.cpp
+    │   ├── AbstractOperation.cpp
+    │   ├── Client.cpp
+    │   ├── Consultation.cpp
+    │   ├── Transfer.cpp
+    │   ├── VIPClient.cpp
+    │   └── Withdraw.cpp
+    └── simulation
+        ├── Simulation.cpp
+        ├── SimulationEntry.cpp
+        ├── SimulationUtility.cpp
+        ├── StatisticManager.cpp
+        ├── TestSimulation.cpp
+        └── include
+            ├── Simulation.h
+            ├── SimulationEntry.h
+            ├── SimulationUtility.h
+            └── StatisticManager.h
 
 
 文件内容如下：
 
-===== 文件: C:\Users\Jianke LIN\Desktop\cpp_test\SMA-CPP\code_description.txt =====
+===== 文件: c:\Users\tassili\Downloads\SMA CPP\SMA-CPP\code_description.txt =====
 
 
-===== 文件: C:\Users\Jianke LIN\Desktop\cpp_test\SMA-CPP\read.py =====
+===== 文件: c:\Users\tassili\Downloads\SMA CPP\SMA-CPP\read.py =====
 import os
 
 # 设置目标目录为当前目录

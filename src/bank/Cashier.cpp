@@ -1,4 +1,4 @@
-#include "Cashier.h"
+#include "C:\Users\tassili\Downloads\SMA CPP\SMA-CPP\bank\include\Cashier.h"
 #include <iostream>
 
 Cashier::Cashier(int cashierId) : id(cashierId), busy(false), serviceTime(0) {}

@@ -1,7 +1,7 @@
 #ifndef BANK_H
 #define BANK_H
 
-#include "Cashier.h"
+#include "C:\Users\tassili\Downloads\SMA CPP\SMA-CPP\bank\include\Cashier.h"
 #include <vector>
 
 class Bank {
