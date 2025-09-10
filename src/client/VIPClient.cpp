@@ -1,2 +1,2 @@
-﻿#include "bank/client/VIPClient.hpp"
+﻿#include "include/client/VIPClient.hpp"
 // inline in header

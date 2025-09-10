@@ -2,7 +2,7 @@
 #define STATISTIC_MANAGER_H
 
 #include <vector>
-#include "bank/client/AbstractClient.hpp"
+#include "inculde/client/AbstractClient.hpp"
 
 class StatisticManager {
 private:

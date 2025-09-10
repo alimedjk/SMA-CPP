@@ -1,4 +1,4 @@
-#include "C:\Users\tassili\Downloads\SMA CPP\SMA-CPP\bank\include\Bank.h"
+#include "include/bank/Bank.h"
 
 Bank::Bank(int numCashiers) {
     for (int i = 0; i < numCashiers; i++) {

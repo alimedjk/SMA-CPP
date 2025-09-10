@@ -1,4 +1,4 @@
-#include "SimulationEntry.h"
+#include "include/simulation/SimulationEntry.h"
 
 SimulationEntry::SimulationEntry(int simulationDuration,
                                  int cashierCount,

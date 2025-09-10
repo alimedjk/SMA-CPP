@@ -1,4 +1,4 @@
-#include "StatisticManager.h"
+#include "include/simulation/StatisticManager.h"
 
 void StatisticManager::registerServedClient(AbstractClient* client) {
     servedClients.push_back(client);

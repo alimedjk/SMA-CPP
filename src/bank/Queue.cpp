@@ -1,4 +1,4 @@
-#include "C:\Users\tassili\Downloads\SMA CPP\SMA-CPP\bank\include\Queue.h"
+#include "include/bank/Queue.h"
 #include <stdexcept>
 
 void Queue::enqueue(int value) {

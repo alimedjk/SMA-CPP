@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 #include "SimulationEntry.h"
-#include "StatisticManager.h"
-#include "AbstractClient.h"
+#include "include/simulation/StatisticManager.h"
+#include "include/client/AbstractClient.h"
 
 class Simulation {
 private:
