@@ -1,2 +1,2 @@
-﻿#include "include/client/VIPClient.hpp"
+﻿#include "client/VIPClient.hpp"
 // inline in header

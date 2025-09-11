@@ -1,5 +1,4 @@
-#include "include/bank/Bank.h"
-
+#include "bank/Bank.h"
 Bank::Bank(int numCashiers) {
     for (int i = 0; i < numCashiers; i++) {
         cashiers.emplace_back(i + 1);

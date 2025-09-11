@@ -1,4 +1,4 @@
-﻿#include "include/client/AbstractClient.hpp"
+﻿#include "client/AbstractClient.hpp"
 namespace bank::client {
 AbstractClient::AbstractClient(int arrivalTime, int patienceTime, OperationPtr operation)
     : arrivalTime_(arrivalTime),

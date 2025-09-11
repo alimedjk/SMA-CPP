@@ -2,7 +2,8 @@
 #include <memory>
 #include <string>
 #include <algorithm>
-#include "include/client/AbstractOperation.hpp"
+
+#include "client/AbstractOperation.hpp"
 namespace bank::client {
 class AbstractClient {
 public:
@@ -18,7 +19,7 @@ public:
     int departureTime() const noexcept { return departureTime_; }
     void setDepartureTime(int t) noexcept { departureTime_ = t; }
     int patienceTime() const noexcept { return patienceTime_; }
-    void setPatienceTime(int t) noexcept { return patienceTime_ = t; }
+    void setPatienceTime(int t) noexcept { patienceTime_ = t; }
     const AbstractOperation* operation() const noexcept { return operation_.get(); }
     AbstractOperation* operation() noexcept { return operation_.get(); }
     bool hasOperation() const noexcept { return static_cast<bool>(operation_); }

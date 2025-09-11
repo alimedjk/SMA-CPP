@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "include/client/AbstractClient.hpp"
+#include "client/AbstractClient.hpp"
 namespace bank::client {
 class VIPClient final : public AbstractClient {
 public:

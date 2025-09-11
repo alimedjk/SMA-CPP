@@ -3,9 +3,9 @@
 
 #include <string>
 #include <vector>
-#include "SimulationEntry.h"
-#include "include/simulation/StatisticManager.h"
-#include "include/client/AbstractClient.h"
+#include "simulation/StatisticManager.h"
+#include "simulation/SimulationEntry.h"
+#include "client/AbstractClient.hpp"
 
 class Simulation {
 private:
@@ -13,8 +13,8 @@ private:
     StatisticManager statisticManager;
 
     int currentTime;
-    std::vector<AbstractClient*> waitingQueue;
-    std::vector<AbstractClient*> cashiers;
+    std::vector<bank::client::AbstractClient*> waitingQueue;
+    std::vector<bank::client::AbstractClient*> cashiers;
 
 public:
     Simulation(const SimulationEntry& entry);

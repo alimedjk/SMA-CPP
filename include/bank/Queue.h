@@ -2,7 +2,6 @@
 #define QUEUE_H
 
 #include <queue>
-
 class Queue {
 private:
     std::queue<int> q;

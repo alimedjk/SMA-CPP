@@ -1,8 +1,7 @@
 #ifndef CASHIER_H
 #define CASHIER_H
 
-#include "/include/bank/Queue.h"
-
+#include "bank/Queue.h" 
 class Cashier {
 private:
     int id;

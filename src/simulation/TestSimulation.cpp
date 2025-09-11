@@ -1,6 +1,6 @@
 #include <iostream>
-#include "include/simulation/Simulation.h"
-#include "include/simulation/SimulationEntry.h"
+#include "simulation/Simulation.h"
+#include "simulation/SimulationEntry.h"
 
 int main() {
     const int CLIENT_ARRIVAL_INTERVAL = 5;

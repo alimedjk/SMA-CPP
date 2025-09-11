@@ -1,7 +1,7 @@
 #ifndef BANK_H
 #define BANK_H
 
-#include "include/bank/Cashier.h"
+#include "bank/Cashier.h"
 #include <vector>
 
 class Bank {

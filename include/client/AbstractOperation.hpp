@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include <string>
 #include <memory>
+#include "client/AbstractOperation.hpp"
 namespace bank::client {
 class AbstractOperation {
 public:

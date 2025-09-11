@@ -1,0 +1,17 @@
+.vscode/
+*.code-workspace
+
+/build/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.lib
+*.dll
+
+*.log
+*.tmp
+
+Thumbs.db
+Desktop.ini

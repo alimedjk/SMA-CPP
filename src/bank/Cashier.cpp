@@ -1,4 +1,4 @@
-#include "include/bank/Cashier.h"
+#include "bank/Cashier.h"
 #include <iostream>
 
 Cashier::Cashier(int cashierId) : id(cashierId), busy(false), serviceTime(0) {}
