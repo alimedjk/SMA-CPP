@@ -13,35 +13,43 @@ sudo apt update
 sudo apt install -y build-essential g++ pkg-config
 sudo apt install -y libpq-dev postgresql-client
 sudo apt install -y python3-matplotlib python3-numpy python3-psycopg2
+NUMPY_INC=$(python3 -c "import numpy; print(numpy.get_include())")
 ```
 
 build  
 ```bash
-g++ -std=c++17 -O2 -I include -I /usr/include/postgresql \
-  src/bank/*.cpp src/client/*.cpp \
-  src/simulation/Simulation.cpp src/simulation/SimulationEntry.cpp \
-  src/simulation/SimulationUtility.cpp src/simulation/StatisticManager.cpp \
-  src/bdd.cpp src/simulation/TestSimulation.cpp \
-  -lpq -o bin/run_sim
+g++ -std=c++17 -O2 \
+  -I include \
+  -I include/third_party \
+  -I /usr/include/postgresql \
+  -I "$NUMPY_INC" \
+  $(python3-config --includes) \
+  src/bank/*.cpp \
+  src/client/*.cpp \
+  src/simulation/Simulation.cpp \
+  src/simulation/SimulationEntry.cpp \
+  src/simulation/SimulationUtility.cpp \
+  src/simulation/StatisticManager.cpp \
+  src/bdd.cpp \
+  src/ihm.cpp \
+  -lpq $(python3-config --embed --ldflags 2>/dev/null || python3-config --ldflags) \
+  -o bin/ihm_demo
 
 ```
 
 RUN the execution file
 
 ```bash
-./bin/run_sim
+./bin/ihm_demo
 ```
 
-Generate plots (Python fallback)
+### Generate plots  
+Windows 10 + WSL2
 
 ```bash
-python3 src/plot_fallback.py 5
-```
-the production will show in  
-```bash
-bin/satisfaction_pie.png
-bin/clients_bars.png
-bin/clients_bars_single.png
+export DISPLAY=$(grep -m1 nameserver /etc/resolv.conf | awk '{print $2}'):0
+IHM_SHOW=1 ./bin/ihm_demo
+
 ```
 
 

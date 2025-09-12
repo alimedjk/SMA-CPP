@@ -46,6 +46,7 @@ namespace detail {
 static std::string s_backend;
 
 struct _interpreter {
+    PyObject *s_python_function_pie;   // <-- 新增
     PyObject* s_python_function_arrow;
     PyObject *s_python_function_show;
     PyObject *s_python_function_close;
@@ -264,6 +265,7 @@ private:
         s_python_function_ginput = safe_import(pymod, "ginput");
         s_python_function_save = safe_import(pylabmod, "savefig");
         s_python_function_annotate = safe_import(pymod,"annotate");
+        s_python_function_pie = safe_import(pymod, "pie");
         s_python_function_cla = safe_import(pymod, "cla");
         s_python_function_clf = safe_import(pymod, "clf");
         s_python_function_errorbar = safe_import(pymod, "errorbar");
@@ -2880,6 +2882,37 @@ inline bool plot(const std::vector<double>& y, const std::string& format = "") {
 inline bool plot(const std::vector<double>& x, const std::vector<double>& y, const std::map<std::string, std::string>& keywords) {
     return plot<double>(x,y,keywords);
 }
+
+inline bool pie(const std::vector<double>& sizes,
+                const std::vector<std::string>& labels = {},
+                double startangle = 90.0,
+                const std::string& autopct = "%.1f%%")
+{
+    detail::_interpreter::get();
+
+    PyObject* arr = detail::get_array(sizes);
+    PyObject* args = PyTuple_New(1);
+    PyTuple_SetItem(args, 0, arr);
+
+    PyObject* kwargs = PyDict_New();
+    if (!labels.empty()) {
+        PyObject* lab = PyList_New(labels.size());
+        for (size_t i = 0; i < labels.size(); ++i)
+            PyList_SetItem(lab, i, PyString_FromString(labels[i].c_str()));
+        PyDict_SetItemString(kwargs, "labels", lab);
+        Py_DECREF(lab);
+    }
+    PyDict_SetItemString(kwargs, "startangle", PyFloat_FromDouble(startangle));
+    if (!autopct.empty())
+        PyDict_SetItemString(kwargs, "autopct", PyString_FromString(autopct.c_str()));
+
+    PyObject* res = PyObject_Call(detail::_interpreter::get().s_python_function_pie, args, kwargs);
+    Py_DECREF(args);
+    Py_DECREF(kwargs);
+    if (res) Py_DECREF(res);
+    return res;
+}
+
 
 /*
  * This class allows dynamic plots, ie changing the plotted data without clearing and re-plotting

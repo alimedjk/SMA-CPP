@@ -1,4 +1,4 @@
-// src/ihm.cpp
+// src/ihm.cpp  —— 纯 C++ 画三张图：分组柱状、饼图、单条柱状
 #include <iostream>
 #include <vector>
 #include <string>
@@ -33,6 +33,14 @@ static bool file_exists(const char* p){
     std::ifstream ifs(p, std::ios::binary);
     return (bool)ifs;
 }
+static bool truthy_env(const char* k){
+    if (const char* v = std::getenv(k)) {
+        std::string s(v);
+        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        return (s=="1" || s=="true" || s=="yes");
+    }
+    return false;
+}
 
 // ---------- DB 工具 ----------
 void exitOnError(PGconn* conn, PGresult* res, const std::string &msg) {
@@ -41,7 +49,6 @@ void exitOnError(PGconn* conn, PGresult* res, const std::string &msg) {
     PQfinish(conn);
     std::exit(EXIT_FAILURE);
 }
-
 PGconn* connectDB(const std::string &conninfo) {
     PGconn* conn = PQconnectdb(conninfo.c_str());
     if (PQstatus(conn) != CONNECTION_OK) {
@@ -52,7 +59,7 @@ PGconn* connectDB(const std::string &conninfo) {
     return conn;
 }
 
-// 直接从 resultats_simulation 取最近 N 个 id（而不是 simulation_entry）
+// 直接从 resultats_simulation 取最近 N 个 id
 std::vector<int> fetchResultIds(PGconn* conn, int limit = 5) {
     std::vector<int> ids;
     std::ostringstream q;
@@ -129,25 +136,28 @@ static double vec_max(const std::vector<double>& v){
 }
 
 int main(int, char**) {
-    // 强制无界面后端（必须在第一次使用 plt 之前）
-    setenv("MPLBACKEND", "Agg", 1);
+    // 交互 or 离线(保存文件) 模式
+    const bool interactive = truthy_env("IHM_SHOW");
+    if (!interactive) {
+        // 强制无界面后端（必须在第一次使用 plt 之前）
+        setenv("MPLBACKEND", "Agg", 1);
+        matplotlibcpp::backend("Agg");
+    }
 
     std::string conninfo =
         "host=postgresql-hammal.alwaysdata.net port=5432 dbname=hammal_simulation user=hammal password=Zahrdin.99";
     PGconn* conn = connectDB(conninfo);
     if (!conn) return EXIT_FAILURE;
 
-    // 只看 resultats_simulation 里的最近 N 条
     std::vector<int> ids = fetchResultIds(conn, 5);
     if (ids.empty()) {
         std::cerr << "Aucune ligne dans resultats_simulation." << std::endl;
         PQfinish(conn);
         return EXIT_FAILURE;
     }
-
     auto rows = fetchResultsForIds(conn, ids);
 
-    // ---------- 图1：分组柱状图（不使用 xticks） ----------
+    // ---------- 图1：分组柱状图 ----------
     std::vector<double> x;
     std::vector<double> servis, non_servis;
     for (size_t i = 0; i < rows.size(); ++i) {
@@ -155,50 +165,62 @@ int main(int, char**) {
         servis.push_back(rows[i].clients_servis);
         non_servis.push_back(rows[i].clients_non_servis);
     }
-    std::vector<double> x_servis, x_non_servis;
-    double width = 0.35;
-    for (double xi : x) {
-        x_servis.push_back(xi - width/2.0);
-        x_non_servis.push_back(xi + width/2.0);
-    }
+    // 用左右平移来“做宽度”，关键字里只放 label（matplotlibcpp 的 bar 本身没有 width 参数）
+    const double half = 0.18;
+    std::vector<double> x_left, x_right;
+    for (double xi : x) { x_left.push_back(xi - half); x_right.push_back(xi + half); }
 
     safe_call("figure(1)", [&]{ plt::figure(); });
-    safe_call("bar(servis)",     [&]{ plt::bar(x_servis,    servis,     "", "Servis",      width); });
-    safe_call("bar(non_servis)", [&]{ plt::bar(x_non_servis,non_servis, "", "Non servis",  width); });
-    safe_call("legend()",        [&]{ plt::legend(); });
-    safe_call("title(1)",        [&]{ plt::title("Clients servis / non servis (dernieres simulations)"); });
-    safe_call("xlabel(1)",       [&]{ plt::xlabel("Index (0..N-1)"); });
-    safe_call("ylabel(1)",       [&]{ plt::ylabel("Nombre de clients"); });
+    safe_call("bar(servis)", [&]{ plt::bar(x_left, servis, "black", "-", 1.0, {{"label","Servis"}}); });
+    safe_call("bar(non_servis)", [&]{ plt::bar(x_right, non_servis, "black", "-", 1.0, {{"label","Non servis"}}); });
 
-    double ymax = std::max(vec_max(servis), vec_max(non_servis));
-    for (size_t i = 0; i < x.size(); ++i){
-        safe_call("text(id)", [&]{
-            std::ostringstream s; s << "id=" << rows[i].id;
-            plt::text(x[i]-0.15, -0.05 * std::max(1.0, ymax), s.str());
-        });
-        safe_call("text(servis)",     [&]{ plt::text(x_servis[i],     servis[i]     + 0.02*ymax, std::to_string((int)servis[i])); });
-        safe_call("text(non_servis)", [&]{ plt::text(x_non_servis[i], non_servis[i] + 0.02*ymax, std::to_string((int)non_servis[i])); });
-    }
-    safe_call("save(bars.png)",  [&]{ plt::save("bin/bars.png"); });
+    // x 轴显示 id
+    std::vector<std::string> id_labels; id_labels.reserve(rows.size());
+    for (auto &r : rows) id_labels.push_back(std::to_string(r.id));
+    safe_call("xticks", [&]{ plt::xticks(x, id_labels); });
 
-    int last_id = rows.back().id; // rows according  resultats_simulation 排的
-    ResultRow single = fetchResultForId(conn, last_id);
+    safe_call("legend()", [&]{ plt::legend(); });
+    safe_call("title(1)", [&]{ plt::title("Clients servis / non servis par simulation"); });
+    safe_call("xlabel(1)", [&]{ plt::xlabel("ID simulation"); });
+    safe_call("ylabel(1)", [&]{ plt::ylabel("Nombre de clients"); });
+    safe_call("tight", [&]{ plt::tight_layout(); });
+    safe_call("save(bars)", [&]{ plt::save("bin/clients_bars.png", 150); });
+
+    // ---------- 图2：满意度饼图（最近一次） ----------
+    int last_id = rows.back().id;
+    ResultRow last = fetchResultForId(conn, last_id);
+    const double sat = last.taux_satisfaction;
+    const double uns = 100.0 - sat;
+
+    safe_call("figure(2)", [&]{ plt::figure(); });
+    safe_call("pie", [&]{ plt::pie(std::vector<double>{sat, uns},
+                                   std::vector<std::string>{"Satisfaits","Non satisfaits"},
+                                   90.0, "%.1f%%"); });
+    safe_call("title(2)", [&]{ plt::title("Taux de satisfaction (id=" + std::to_string(last_id) + ") - " + std::to_string((int)std::round(sat)) + "%"); });
+    safe_call("tight", [&]{ plt::tight_layout(); });
+    safe_call("save(pie)", [&]{ plt::save("bin/satisfaction_pie.png", 150); });
+
+    // ---------- 图3：最近一次的双柱图 ----------
+    safe_call("figure(3)", [&]{ plt::figure(); });
     std::vector<double> sx{0.0, 1.0};
-    std::vector<double> sy{ single.taux_satisfaction, 100.0 - single.taux_satisfaction };
+    std::vector<double> sy{static_cast<double>(last.clients_servis),
+                           static_cast<double>(last.clients_non_servis)};
+    safe_call("bar(single)", [&]{ plt::bar(sx, sy, "black", "-", 1.0, {{"label","Clients"}}); });
+    safe_call("xticks(single)", [&]{ plt::xticks(sx, std::vector<std::string>{"Servis","Non servis"}); });
+    safe_call("title(3)", [&]{ plt::title("Clients (id=" + std::to_string(last_id) + ")"); });
+    safe_call("ylabel(3)", [&]{ plt::ylabel("Nombre de clients"); });
+    safe_call("tight", [&]{ plt::tight_layout(); });
+    safe_call("save(single)", [&]{ plt::save("bin/clients_bars_single.png", 150); });
 
-    safe_call("figure(2)",       [&]{ plt::figure(); });
-    safe_call("bar(satisf)",     [&]{ plt::bar(sx, sy, "", "", 0.6); });
-    safe_call("ylim()",          [&]{ plt::ylim(0, 100); });
-    safe_call("text(label1)",    [&]{ plt::text(sx[0]-0.1, -5.0, "Satisfaits"); });
-    safe_call("text(label2)",    [&]{ plt::text(sx[1]-0.2, -5.0, "Non satisfaits"); });
-    safe_call("text(val1)",      [&]{ plt::text(sx[0]-0.05, sy[0] + 2.0, std::to_string((int)sy[0]) + "%"); });
-    safe_call("text(val2)",      [&]{ plt::text(sx[1]-0.05, sy[1] + 2.0, std::to_string((int)sy[1]) + "%"); });
-    safe_call("title(2)",        [&]{ plt::title("Taux de satisfaction (id=" + std::to_string(last_id) + ")"); });
-    safe_call("save(satis.png)", [&]{ plt::save("bin/satisfaction.png"); });
+    if (interactive) {
+        // 在需要演示时弹窗（WSLg 或装了 X server 才能看到）
+        safe_call("show", [&]{ plt::show(); });
+    }
 
-    std::cout << "Tried saving:\n"
-              << "  bin/bars.png  -> " << (file_exists("bin/bars.png") ? "OK" : "FAILED") << "\n"
-              << "  bin/satisfaction.png -> " << (file_exists("bin/satisfaction.png") ? "OK" : "FAILED") << "\n";
+    std::cout << "Saved:\n"
+              << "  bin/clients_bars.png           -> " << (file_exists("bin/clients_bars.png") ? "OK" : "FAILED") << "\n"
+              << "  bin/satisfaction_pie.png       -> " << (file_exists("bin/satisfaction_pie.png") ? "OK" : "FAILED") << "\n"
+              << "  bin/clients_bars_single.png    -> " << (file_exists("bin/clients_bars_single.png") ? "OK" : "FAILED") << "\n";
 
     PQfinish(conn);
     return 0;
