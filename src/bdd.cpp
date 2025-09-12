@@ -20,15 +20,15 @@ bool Database::isConnected() const {
     return conn_ != nullptr;
 }
 
-// ?? NOUVELLE MÉTHODE
 void Database::insertSimulationResults(const Simulation& simulation, const SimulationEntry& entry) {
     const auto& stats = simulation.getStatisticManager();
 
+    // Insertion dans resultats_simulation et récupération de l'id généré
     std::ostringstream query;
-    query << "INSERT INTO resultats_simulation("
+    query << "INSERT INTO resultats_simulation ("
         << "duree_effective, clients_servis, clients_non_servis, taux_satisfaction, "
-        << "temps_attente_moyen, temps_service_moyen, taux_occupation)"
-        << " VALUES ("
+        << "temps_attente_moyen, temps_service_moyen, taux_occupation) "
+        << "VALUES ("
         << entry.getSimulationDuration() << ", "
         << stats.servedClientCount() << ", "
         << stats.nonServedClientCount() << ", "
@@ -36,14 +36,42 @@ void Database::insertSimulationResults(const Simulation& simulation, const Simul
         << stats.calculateAverageClientWaitingTime() << ", "
         << stats.calculateAverageClientServiceTime() << ", "
         << stats.calculateAverageCashierOccupationRate(entry.getCashierCount())
-        << ");";
+        << ") RETURNING id;";
 
     PGresult* res = PQexec(conn_, query.str().c_str());
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-        std::cerr << "Erreur d'insertion : " << PQerrorMessage(conn_) << std::endl;
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        std::cerr << "Erreur d'insertion resultats : " << PQerrorMessage(conn_) << std::endl;
+        PQclear(res);
+        return;
+    }
+
+    // Récupération de l'id généré
+    int simulation_resultat_id = std::stoi(PQgetvalue(res, 0, 0));
+    PQclear(res);
+
+    // Insertion dans simulation_entry avec l'id correct
+    std::ostringstream query_entry;
+    query_entry << "INSERT INTO simulation_entry ("
+        << "id, duree_effective, cashiercount, minservicetime, maxservicetime, "
+        << "clientarrivalinterval, priorityclientrate, clientpatiencetime) "
+        << "VALUES ("
+        << simulation_resultat_id << ", "
+        << entry.getSimulationDuration() << ", "
+        << entry.getCashierCount() << ", "
+        << entry.getMinServiceTime() << ", "
+        << entry.getMaxServiceTime() << ", "
+        << entry.getClientArrivalInterval() << ", "
+        << entry.getPriorityClientRate() << ", "
+        << entry.getClientPatienceTime()
+        << ");";
+
+    PGresult* res_entry = PQexec(conn_, query_entry.str().c_str());
+    if (PQresultStatus(res_entry) != PGRES_COMMAND_OK) {
+        std::cerr << "Erreur d'insertion entry : " << PQerrorMessage(conn_) << std::endl;
     }
     else {
-        std::cout << "Résultats insérés avec succès ?" << std::endl;
+        std::cout << "entry inseres avec succes ?" << std::endl;
     }
-    PQclear(res);
+    PQclear(res_entry);
+
 }
