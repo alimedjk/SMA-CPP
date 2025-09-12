@@ -12,6 +12,7 @@
 
 *.log
 *.tmp
+*.py
 
 Thumbs.db
 Desktop.ini
