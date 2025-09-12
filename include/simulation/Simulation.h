@@ -21,6 +21,9 @@ public:
 
     void simulate();
     std::string simulationResults() const;
+    const SimulationEntry& getEntry() const { return simulationEntry; }
+    const StatisticManager& getStatisticManager() const { return statisticManager; }
+
 
 private:
     void generateClient();
