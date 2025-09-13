@@ -120,28 +120,35 @@ RUN the execution file
 ./bin/ihm_demo --ids=1,2,3 --id=4
 ```
 
-仅保存图片（推荐在无图形环境或不想弹窗时）：
-./bin/ihm_demo --ids=1,2,3 --id=2
-输出：
+Symptom: “Matplotlib is currently using agg… so cannot show the figure.”
 
-out/compare.png（多仿真对比条形图）
+You either didn’t pass “--show”, or the backend is still Agg.
 
-out/pie_2.png（id=2 的饼图）
+Ensure:
+a) You ran with --show.
+b) The code sets plt::backend("TkAgg") before any plotting calls (current code does this).
+c) python3-tk is installed.
+d) VcXsrv is running, and DISPLAY is set correctly in WSL.
 
-弹窗显示（Windows 桌面要先启动 VcXsrv，WSL 设置好 DISPLAY；ihm.cpp 内已根据 --show 切到 TkAgg）：
-./bin/ihm_demo --ids=1,2,3 --id=2 --show
+Symptom: No window appears when running with --show.
 
-指定输出目录：
-./bin/ihm_demo --ids=1,4,3 --id=4 --outdir=figs
+Confirm VcXsrv is running and not blocked by the firewall.
 
-参数说明：
+Recheck DISPLAY (echo $DISPLAY).
 
---ids=1,2,3 多个仿真 ID，用于生成条形图
+Test with xclock (requires x11-apps installed).
 
---id=2 单个仿真 ID，用于生成饼图
+Symptom: “undefined reference to Py…” at link time.
 
---show 打开窗口显示（TkAgg），否则只保存（Agg）
+Ensure your link line includes:
+$(python3-config --embed --ldflags)
+and that it comes after the source files.
 
---outdir=out 图片保存目录（默认 out）
+Symptom: Database connection failure.
 
+Check host/port, credentials, and network egress for port 5432.
+
+Symptom: Images not saved when running without --show.
+
+Check that the output directory is writable. The program uses std::filesystem::create_directories; the console will log paths for saved images.
 
