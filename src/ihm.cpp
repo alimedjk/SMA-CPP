@@ -1,226 +1,248 @@
-// src/ihm.cpp  —— 纯 C++ 画三张图：分组柱状、饼图、单条柱状
+// src/ihm.cpp  —— 读取 PostgreSQL 结果，生成条形图（对比若干仿真）+ 单个仿真的饼图
+// 支持 --ids=1,2,3 选择对比的仿真ID，--id=2 为饼图的目标仿真ID，--show 选择是否弹窗显示
+// WSL 下如需弹窗显示：Windows 端运行 VcXsrv；WSL 安装 python3-tk；并在程序首次绘图前设置 TkAgg 后端。
+
 #include <iostream>
 #include <vector>
 #include <string>
-#include <map>
 #include <sstream>
-#include <cstdlib>
 #include <algorithm>
-#include <fstream>
-
+#include <map>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <iomanip>
+#include <filesystem>
 #include <libpq-fe.h>
 
-#if defined(__GNUC__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#include "matplotlibcpp.h"
-#if defined(__GNUC__)
-#  pragma GCC diagnostic pop
-#endif
-
+#include "third_party/matplotlibcpp.h"
 namespace plt = matplotlibcpp;
 
-// ---------- 小工具 ----------
-template<typename F>
-inline void safe_call(const char* name, F&& f){
-    try { f(); }
-    catch(const std::exception& e){
-        std::cerr << name << " skipped: " << e.what() << "\n";
-    }
-}
-static bool file_exists(const char* p){
-    std::ifstream ifs(p, std::ios::binary);
-    return (bool)ifs;
-}
-static bool truthy_env(const char* k){
-    if (const char* v = std::getenv(k)) {
-        std::string s(v);
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-        return (s=="1" || s=="true" || s=="yes");
-    }
-    return false;
+static const char* kConnInfo =
+    "host=postgresql-hammal.alwaysdata.net "
+    "port=5432 "
+    "dbname=hammal_simulation "
+    "user=hammal "
+    "password=Zahrdin.99";
+
+static inline std::string trim(std::string s) {
+    auto notspace = [](int ch){ return !std::isspace(ch); };
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), notspace));
+    s.erase(std::find_if(s.rbegin(), s.rend(), notspace).base(), s.end());
+    return s;
 }
 
-// ---------- DB 工具 ----------
-void exitOnError(PGconn* conn, PGresult* res, const std::string &msg) {
-    if (res) PQclear(res);
-    std::cerr << msg << " : " << PQerrorMessage(conn) << std::endl;
-    PQfinish(conn);
-    std::exit(EXIT_FAILURE);
-}
-PGconn* connectDB(const std::string &conninfo) {
-    PGconn* conn = PQconnectdb(conninfo.c_str());
-    if (PQstatus(conn) != CONNECTION_OK) {
-        std::cerr << "Erreur de connexion: " << PQerrorMessage(conn) << std::endl;
-        if (conn) PQfinish(conn);
-        return nullptr;
-    }
-    return conn;
-}
-
-// 直接从 resultats_simulation 取最近 N 个 id
-std::vector<int> fetchResultIds(PGconn* conn, int limit = 5) {
-    std::vector<int> ids;
-    std::ostringstream q;
-    q << "SELECT id FROM resultats_simulation ORDER BY id DESC LIMIT " << limit << ";";
-    PGresult* res = PQexec(conn, q.str().c_str());
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        exitOnError(conn, res, "Erreur SELECT ids from resultats_simulation");
-    }
-    int rows = PQntuples(res);
-    for (int i = 0; i < rows; ++i) {
-        ids.push_back(std::stoi(PQgetvalue(res, i, 0)));
-    }
-    PQclear(res);
-    std::reverse(ids.begin(), ids.end()); // 升序
-    return ids;
-}
-
-struct ResultRow { int id; int clients_servis; int clients_non_servis; double taux_satisfaction; };
-
-std::vector<ResultRow> fetchResultsForIds(PGconn* conn, const std::vector<int>& ids) {
-    std::vector<ResultRow> out;
-    if (ids.empty()) return out;
-
-    std::ostringstream q;
-    q << "SELECT id, clients_servis, clients_non_servis, taux_satisfaction "
-      << "FROM resultats_simulation WHERE id IN (";
-    for (size_t i = 0; i < ids.size(); ++i) {
-        if (i) q << ",";
-        q << ids[i];
-    }
-    q << ") ORDER BY id;";
-    PGresult* res = PQexec(conn, q.str().c_str());
-    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        exitOnError(conn, res, "Erreur SELECT results");
-    }
-    int rows = PQntuples(res);
-    for (int i = 0; i < rows; ++i) {
-        ResultRow r;
-        r.id = std::stoi(PQgetvalue(res, i, 0));
-        r.clients_servis = std::stoi(PQgetvalue(res, i, 1));
-        r.clients_non_servis = std::stoi(PQgetvalue(res, i, 2));
-        double ts = std::stod(PQgetvalue(res, i, 3));
-        if (ts <= 1.0) ts *= 100.0; // 0..1 -> %
-        r.taux_satisfaction = ts;
-        out.push_back(r);
-    }
-    PQclear(res);
+static inline std::vector<std::string> split(const std::string& s, char sep) {
+    std::vector<std::string> out;
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, sep)) out.push_back(trim(item));
     return out;
 }
 
-ResultRow fetchResultForId(PGconn* conn, int id) {
-    std::ostringstream q;
-    q << "SELECT id, clients_servis, clients_non_servis, taux_satisfaction "
-      << "FROM resultats_simulation WHERE id = " << id << " LIMIT 1;";
-    PGresult* res = PQexec(conn, q.str().c_str());
-    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
-        exitOnError(conn, res, "Erreur SELECT single result");
+struct SimSummary {
+    int id = -1;
+    int served = 0;
+    int unserved = 0;
+    double satisfaction = 0.0; // 数据库里是 numeric，按百分比（如 92.0）
+};
+
+//-----------------------------
+static inline void clearAndWarn(PGresult* r, const std::string& what) {
+    if (r) PQclear(r);
+    std::cerr << what << "\n";
+}
+
+static bool fetch_summary(PGconn* conn, int simId, SimSummary& out) {
+    const char* sql =
+        "SELECT clients_servis, clients_non_servis, taux_satisfaction "
+        "FROM resultats_simulation WHERE id = $1";
+
+    std::string idstr = std::to_string(simId);
+    const char* params[1] = { idstr.c_str() };
+
+    PGresult* res = PQexecParams(conn, sql,
+                                 1,      // nParams
+                                 nullptr,// param types
+                                 params, // param values
+                                 nullptr,// param lengths
+                                 nullptr,// param formats
+                                 0);     // result format: text
+
+    if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+        std::string emsg = "[SQL] fetch_summary id=" + std::to_string(simId) +
+                           " failed: " + PQerrorMessage(conn);
+        clearAndWarn(res, emsg);
+        return false;
     }
-    ResultRow r;
-    r.id = std::stoi(PQgetvalue(res, 0, 0));
-    r.clients_servis = std::stoi(PQgetvalue(res, 0, 1));
-    r.clients_non_servis = std::stoi(PQgetvalue(res, 0, 2));
-    double ts = std::stod(PQgetvalue(res, 0, 3));
-    if (ts <= 1.0) ts *= 100.0;
-    r.taux_satisfaction = ts;
+
+    if (PQntuples(res) < 1) {
+        clearAndWarn(res, "[warn] simulation id=" + std::to_string(simId) + " not found.");
+        return false;
+    }
+
+    out.id = simId;
+    out.served    = std::atoi(PQgetvalue(res, 0, 0));
+    out.unserved  = std::atoi(PQgetvalue(res, 0, 1));
+    out.satisfaction = std::atof(PQgetvalue(res, 0, 2)); // 92, 93.0 等
+
     PQclear(res);
-    return r;
+    return true;
 }
 
-static double vec_max(const std::vector<double>& v){
-    double m = 0.0;
-    for(double x : v) if (x > m) m = x;
-    return m;
-}
+static void plot_compare_bar(const std::vector<SimSummary>& sims,
+                             bool can_show,
+                             const std::string& outdir) {
+    if (sims.empty()) return;
 
-int main(int, char**) {
-    // 交互 or 离线(保存文件) 模式
-    const bool interactive = truthy_env("IHM_SHOW");
-    if (!interactive) {
-        // 强制无界面后端（必须在第一次使用 plt 之前）
-        setenv("MPLBACKEND", "Agg", 1);
-        matplotlibcpp::backend("Agg");
-    }
-
-    std::string conninfo =
-        "host=postgresql-hammal.alwaysdata.net port=5432 dbname=hammal_simulation user=hammal password=Zahrdin.99";
-    PGconn* conn = connectDB(conninfo);
-    if (!conn) return EXIT_FAILURE;
-
-    std::vector<int> ids = fetchResultIds(conn, 5);
-    if (ids.empty()) {
-        std::cerr << "Aucune ligne dans resultats_simulation." << std::endl;
-        PQfinish(conn);
-        return EXIT_FAILURE;
-    }
-    auto rows = fetchResultsForIds(conn, ids);
-
-    // ---------- 图1：分组柱状图 ----------
+    // x 位置：0..n-1
     std::vector<double> x;
-    std::vector<double> servis, non_servis;
-    for (size_t i = 0; i < rows.size(); ++i) {
-        x.push_back(static_cast<double>(i));
-        servis.push_back(rows[i].clients_servis);
-        non_servis.push_back(rows[i].clients_non_servis);
-    }
-    // 用左右平移来“做宽度”，关键字里只放 label（matplotlibcpp 的 bar 本身没有 width 参数）
-    const double half = 0.18;
-    std::vector<double> x_left, x_right;
-    for (double xi : x) { x_left.push_back(xi - half); x_right.push_back(xi + half); }
+    x.reserve(sims.size());
+    for (size_t i = 0; i < sims.size(); ++i) x.push_back(static_cast<double>(i));
 
-    safe_call("figure(1)", [&]{ plt::figure(); });
-    safe_call("bar(servis)", [&]{ plt::bar(x_left, servis, "black", "-", 1.0, {{"label","Servis"}}); });
-    safe_call("bar(non_servis)", [&]{ plt::bar(x_right, non_servis, "black", "-", 1.0, {{"label","Non servis"}}); });
+    std::vector<double> y_served, y_unserved;
+    y_served.reserve(sims.size());
+    y_unserved.reserve(sims.size());
 
-    // x 轴显示 id
-    std::vector<std::string> id_labels; id_labels.reserve(rows.size());
-    for (auto &r : rows) id_labels.push_back(std::to_string(r.id));
-    safe_call("xticks", [&]{ plt::xticks(x, id_labels); });
+    std::vector<std::string> xticklabels;
+    xticklabels.reserve(sims.size());
 
-    safe_call("legend()", [&]{ plt::legend(); });
-    safe_call("title(1)", [&]{ plt::title("Clients servis / non servis par simulation"); });
-    safe_call("xlabel(1)", [&]{ plt::xlabel("ID simulation"); });
-    safe_call("ylabel(1)", [&]{ plt::ylabel("Nombre de clients"); });
-    safe_call("tight", [&]{ plt::tight_layout(); });
-    safe_call("save(bars)", [&]{ plt::save("bin/clients_bars.png", 150); });
-
-    // ---------- 图2：满意度饼图（最近一次） ----------
-    int last_id = rows.back().id;
-    ResultRow last = fetchResultForId(conn, last_id);
-    const double sat = last.taux_satisfaction;
-    const double uns = 100.0 - sat;
-
-    safe_call("figure(2)", [&]{ plt::figure(); });
-    safe_call("pie", [&]{ plt::pie(std::vector<double>{sat, uns},
-                                   std::vector<std::string>{"Satisfaits","Non satisfaits"},
-                                   90.0, "%.1f%%"); });
-    safe_call("title(2)", [&]{ plt::title("Taux de satisfaction (id=" + std::to_string(last_id) + ") - " + std::to_string((int)std::round(sat)) + "%"); });
-    safe_call("tight", [&]{ plt::tight_layout(); });
-    safe_call("save(pie)", [&]{ plt::save("bin/satisfaction_pie.png", 150); });
-
-    // ---------- 图3：最近一次的双柱图 ----------
-    safe_call("figure(3)", [&]{ plt::figure(); });
-    std::vector<double> sx{0.0, 1.0};
-    std::vector<double> sy{static_cast<double>(last.clients_servis),
-                           static_cast<double>(last.clients_non_servis)};
-    safe_call("bar(single)", [&]{ plt::bar(sx, sy, "black", "-", 1.0, {{"label","Clients"}}); });
-    safe_call("xticks(single)", [&]{ plt::xticks(sx, std::vector<std::string>{"Servis","Non servis"}); });
-    safe_call("title(3)", [&]{ plt::title("Clients (id=" + std::to_string(last_id) + ")"); });
-    safe_call("ylabel(3)", [&]{ plt::ylabel("Nombre de clients"); });
-    safe_call("tight", [&]{ plt::tight_layout(); });
-    safe_call("save(single)", [&]{ plt::save("bin/clients_bars_single.png", 150); });
-
-    if (interactive) {
-        // 在需要演示时弹窗（WSLg 或装了 X server 才能看到）
-        safe_call("show", [&]{ plt::show(); });
+    for (auto& s : sims) {
+        y_served.push_back(s.served);
+        y_unserved.push_back(s.unserved);
+        xticklabels.push_back(std::to_string(s.id));
     }
 
-    std::cout << "Saved:\n"
-              << "  bin/clients_bars.png           -> " << (file_exists("bin/clients_bars.png") ? "OK" : "FAILED") << "\n"
-              << "  bin/satisfaction_pie.png       -> " << (file_exists("bin/satisfaction_pie.png") ? "OK" : "FAILED") << "\n"
-              << "  bin/clients_bars_single.png    -> " << (file_exists("bin/clients_bars_single.png") ? "OK" : "FAILED") << "\n";
+    plt::figure_size(900, 600);
+    const double w = 0.35;
+
+    // 左右两组条
+    std::vector<double> x_left = x, x_right = x;
+    for (size_t i = 0; i < x.size(); ++i) {
+        x_left[i]  = x[i] - w/2.0;
+        x_right[i] = x[i] + w/2.0;
+    }
+
+    plt::bar(x_left,  y_served, "black", "-", 1.0, {{"label","Servis"}});
+    plt::bar(x_right, y_unserved, "black", "-", 1.0, {{"label","Non servis"}});
+
+    plt::title("Clients servis / non servis par simulation");
+    plt::xlabel("ID simulation");
+    plt::ylabel("Nombre de clients");
+    plt::xticks(x, xticklabels);
+    plt::legend();
+    plt::tight_layout();
+
+    if (can_show) {
+        plt::show();
+    } else {
+        std::string path = outdir + "/compare.png";
+        plt::save(path, 200);
+        std::cout << "[save] " << path << "\n";
+    }
+}
+
+static void plot_single_pie(const SimSummary& s,
+                            bool can_show,
+                            const std::string& outdir,
+                            const std::string& filename) {
+    // sizes & labels
+    std::vector<double> sizes = { static_cast<double>(s.served),
+                                  static_cast<double>(s.unserved) };
+    std::vector<std::string> labels = {"Servis", "Non servis"};
+
+    plt::figure_size(650, 480);
+    plt::pie(sizes, labels, 90.0 /* startangle */, "%.1f%%");
+
+
+    std::ostringstream oss;
+    oss << "Taux de satisfaction (id=" << s.id << ") - "
+        << std::fixed << std::setprecision(1) << s.satisfaction << "%";
+    plt::title(oss.str());
+    plt::tight_layout();
+
+    if (can_show) {
+        plt::show();
+    } else {
+        std::string path = outdir + "/" + filename;
+        plt::save(path, 200);
+        std::cout << "[save] " << path << "\n";
+    }
+}
+
+struct Args {
+    std::vector<int> ids_to_compare;
+    int pie_id = -1;
+    bool show = false;
+    std::string outdir = "out";
+};
+
+static Args parse_args(int argc, char** argv) {
+    Args a;
+    for (int i = 1; i < argc; ++i) {
+        std::string t = argv[i];
+        if (t.rfind("--ids=", 0) == 0) {
+            auto lst = split(t.substr(6), ',');
+            for (auto& s : lst) if (!s.empty()) a.ids_to_compare.push_back(std::stoi(s));
+        } else if (t.rfind("--id=", 0) == 0) {
+            a.pie_id = std::stoi(t.substr(5));
+        } else if (t == "--show") {
+            a.show = true;
+        } else if (t.rfind("--outdir=", 0) == 0) {
+            a.outdir = t.substr(9);
+        }
+    }
+    return a;
+}
+
+int main(int argc, char** argv) {
+    Args args = parse_args(argc, argv);
+
+    if (args.show) {
+        plt::backend("TkAgg");
+    } else {
+        plt::backend("Agg");
+    }
+
+    std::cout << "Using DB conn: " << kConnInfo << "\n";
+    PGconn* conn = PQconnectdb(kConnInfo);
+    if (PQstatus(conn) != CONNECTION_OK) {
+        std::cerr << "DB connect failed.\n" << PQerrorMessage(conn);
+        PQfinish(conn);
+        return 1;
+    }
+    std::cout << "DB connected.\n";
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(args.outdir, ec);   // 等价于 `mkdir -p`
+    if (ec) {
+        std::cerr << "[warn] cannot create output dir " << args.outdir
+                << ": " << ec.message() << "\n";
+    }
+
+
+    std::vector<SimSummary> compare;
+    for (int id : args.ids_to_compare) {
+        SimSummary s;
+        if (fetch_summary(conn, id, s)) compare.push_back(s);
+        else std::cerr << "[warn] simulation id=" << id << " not found or SQL failed, skip.\n";
+    }
+    if (!compare.empty()) {
+        plot_compare_bar(compare, args.show, args.outdir);
+    }
+
+    // 读取并绘制 单个饼图
+    if (args.pie_id >= 0) {
+        SimSummary s;
+        if (fetch_summary(conn, args.pie_id, s)) {
+            plot_single_pie(s, args.show, args.outdir,
+                            "pie_" + std::to_string(args.pie_id) + ".png");
+        } else {
+            std::cerr << "[warn] simulation id=" << args.pie_id
+                      << " not found or SQL failed, skip pie.\n";
+        }
+    }
 
     PQfinish(conn);
     return 0;
